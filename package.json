@@ -5,7 +5,9 @@
   "description": "Open-source production-safe Zynost ERC-4337 verifying paymaster for BNB Smart Chain.",
   "scripts": {
     "compile": "hardhat compile",
-    "test": "hardhat test test/ZynostVerifyingPaymaster.test.js",
+    "test": "hardhat test test/*.test.js",
+    "test:paymaster": "hardhat test test/ZynostVerifyingPaymaster.test.js",
+    "test:factory": "hardhat test test/SimpleAccountFactory.test.js",
     "check:public": "node scripts/check-public-repo.js",
     "clean": "hardhat clean"
   },
