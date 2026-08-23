@@ -1,0 +1,22 @@
+{
+  "name": "zynost-paymaster-overview",
+  "version": "1.0.0",
+  "private": false,
+  "description": "Public reference implementation of Zynost's ERC-4337 gas sponsorship model for BNB Smart Chain.",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "clean": "hardhat clean"
+  },
+  "license": "GPL-3.0-only",
+  "type": "commonjs",
+  "dependencies": {
+    "@account-abstraction/contracts": "^0.6.0",
+    "@openzeppelin/contracts": "^4.9.6",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.29.0"
+  }
+}
