@@ -1,220 +1,133 @@
-# Zynost Paymaster — Open ERC-4337 Gas Sponsorship on BNB Smart Chain
+# Zynost Paymaster — ERC-4337 Gas Sponsorship on BNB Smart Chain
 
-> **A runnable public reference implementation of Zynost's non-custodial gas-sponsorship architecture for ERC-4337 checkout flows.**
+> **Open-source production-safe on-chain paymaster source and its production test suite, extracted from the live Zynost Pay stack without production secrets.**
 
-Zynost Paymaster is the gas-sponsorship layer behind **Zynost Pay**, a non-custodial crypto payment gateway. The production system solves a common crypto checkout failure: a customer has the payment token but not enough native gas to finish the transaction.
+Zynost Paymaster is the gas-sponsorship layer used for ERC-4337 gasless checkout flows. The contract can spend only its own EntryPoint gas deposit; it does not custody or transfer customer or merchant payment funds.
 
-This repository now contains **real runnable source code**, tests and local/BSC-testnet configuration for the reusable on-chain sponsorship mechanism. It is no longer documentation-only.
-
-**Network focus:** BNB Smart Chain (BSC)  
+**Network focus:** BNB Smart Chain  
 **Account abstraction:** ERC-4337 v0.6  
-**Public contract:** [`contracts/ZynostReferencePaymaster.sol`](contracts/ZynostReferencePaymaster.sol)  
-**Tests:** [`test/ZynostReferencePaymaster.test.js`](test/ZynostReferencePaymaster.test.js)  
-**Related product:** [Zynost Pay](https://github.com/umarae-dev/zynost-pay-overview)
+**Production-safe contract:** [`contracts/ZynostVerifyingPaymaster.sol`](contracts/ZynostVerifyingPaymaster.sol)  
+**Production test suite:** [`test/ZynostVerifyingPaymaster.test.js`](test/ZynostVerifyingPaymaster.test.js)
 
----
+## What is public
 
-## What is open source here
-
-The public implementation demonstrates the core reusable sponsorship model:
+This repository publishes the actual production-safe on-chain component and its matching production tests:
 
 - ERC-4337 `BasePaymaster` integration;
-- off-chain signed sponsorship authorization;
-- authorization bound to chain, paymaster, sender state, validity window and maximum sponsored cost;
-- replay resistance through sender-scoped nonce state;
-- independent on-chain per-sender daily spending caps;
-- independent on-chain global daily spending caps;
+- backend-signed, time-bounded sponsorship authorization;
+- authorization bound to chain, paymaster address, sender nonce, validity window and maximum sponsored cost;
+- sender-scoped replay resistance;
+- per-sender and global daily sponsorship caps enforced on-chain;
 - emergency sponsorship pause;
-- owner-controlled signer/cap administration;
-- adversarial tests for the core authorization and budget invariants.
+- owner-controlled signer and cap administration;
+- genuine EntryPoint-based Hardhat tests, not a hand-rolled mock;
+- secret scanning guard and GitHub Actions CI.
 
-The public code is designed to be independently compiled and tested without access to Zynost production infrastructure.
-
----
+The wider commercial backend, signer infrastructure, credentials, merchant/customer systems and operational policy remain private and are not required to compile or test this repository.
 
 ## Architecture
 
 ```text
-Customer Wallet
-      │
-      │ signs intent
-      ▼
-ERC-4337 Smart Account
-      │
-      │ UserOperation
-      ▼
-Off-chain Sponsorship Policy
-      │
-      │ scoped + time-bounded authorization
-      ▼
-Zynost Reference Paymaster
-      │
-      ├─ signature verification
-      ├─ sender replay state
-      ├─ cost-bound approval
-      ├─ per-sender cap
-      ├─ global cap
-      └─ emergency pause
-      │
-      ▼
+Customer / Smart Account
+          │
+          │ UserOperation
+          ▼
+Off-chain eligibility + signing policy   [private operations]
+          │
+          │ scoped signed authorization
+          ▼
+ZynostVerifyingPaymaster                 [open source here]
+          │
+          ├─ signature verification
+          ├─ sender nonce / replay state
+          ├─ approved-cost bound
+          ├─ per-sender daily cap
+          ├─ global daily cap
+          └─ emergency pause
+          │
+          ▼
+ERC-4337 EntryPoint
+          │
+          ▼
 BNB Smart Chain
 ```
 
-The paymaster sponsors **gas only**. It does not custody customer or merchant payment funds.
+## Security properties
 
----
+The authorization hash binds the UserOperation to the current chain, this paymaster, sender-scoped nonce state, validity timestamps and an explicit maximum sponsored cost. Wrong-signer validation returns the ERC-4337 signature-failure result rather than granting sponsorship.
 
-## Why this matters for BNB Chain
+Even a correctly signed request remains subject to hard on-chain per-sender and global daily limits. Sponsorship can also be paused independently from user payment funds.
 
-BNB Chain is attractive for payment flows because transactions are fast and inexpensive, but checkout can still fail when a user holds a stablecoin without native BNB for gas.
-
-ERC-4337 lets an application sponsor eligible operations without taking custody of the user's payment. The sponsor can apply policy before signing, while the paymaster independently enforces hard on-chain limits.
-
-That separation is important: bypassing an application-side rate limiter is not enough to obtain unlimited sponsorship.
-
----
-
-## Security model
-
-### 1. Signed, scoped authorization
-
-The authorization hash binds the UserOperation context to:
-
-- the current chain;
-- the paymaster address;
-- sender-scoped replay state;
-- a validity window;
-- an explicit maximum sponsored cost.
-
-A generic reusable "free gas" signature is never sufficient.
-
-### 2. On-chain budget enforcement
-
-Even a correctly signed request must remain within contract-level per-sender and global daily caps.
-
-### 3. Replay resistance
-
-Sender nonce state is included in the signed hash so an authorization envelope cannot simply be replayed indefinitely.
-
-### 4. Emergency control
-
-Sponsorship can be paused independently from user funds. Pausing affects the paymaster's gas budget, not customer or merchant assets.
-
-### 5. Non-custodial invariant
-
-> **The paymaster can spend its own EntryPoint deposit. It cannot spend a customer's payment funds.**
-
----
+> **Non-custodial invariant:** this paymaster spends its own EntryPoint deposit for gas. It has no authority over customer or merchant payment balances.
 
 ## Run locally
 
-Requirements:
-
-- Node.js 20+
-- npm
+Requirements: Node.js 20+ and npm.
 
 ```bash
 npm install
 npm run compile
 npm test
+npm run check:public
 ```
 
-The default Hardhat network requires no API key, wallet or production credential.
+No production API key, signer key, deployer key or RPC credential is required for the local Hardhat test suite.
 
-### Optional BSC Testnet configuration
+## Production tests included
 
-Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Then supply a **testnet-only** RPC URL and testnet deployer key if you want to deploy your own reference instance. Never reuse a production signing/deployer key.
-
----
-
-## Tests
-
-The public suite covers:
+The exact production test file covers:
 
 - valid signed sponsorship;
 - wrong-signer rejection;
-- maximum approved-cost enforcement;
-- per-sender spending limits;
-- global sponsorship limits;
-- paused sponsorship;
-- sender-bound authorization / cross-sender replay rejection.
+- approved maximum-cost enforcement;
+- per-sender daily cap;
+- accumulated sender spend;
+- global daily cap;
+- emergency pause;
+- owner-only administration;
+- expired validity metadata;
+- cross-sender replay rejection.
 
-These tests are adapted from the production development test strategy, while production credentials and operational policy remain outside this repository.
-
----
+The tests deploy the real ERC-4337 EntryPoint implementation from the account-abstraction dependency and impersonate it on the local Hardhat chain for validation calls.
 
 ## Public / private boundary
 
-Zynost is an operating commercial ecosystem. This repository intentionally separates reusable open-source technology from production operations.
-
 ### Public
 
-- reference Solidity paymaster;
-- ERC-4337 sponsorship mechanics;
-- deterministic authorization format;
-- on-chain safety controls;
-- tests;
-- local/BSC-testnet configuration;
-- architecture and threat model.
+- exact production-safe `ZynostVerifyingPaymaster.sol` source;
+- exact production `ZynostVerifyingPaymaster.test.js` suite;
+- Hardhat EntryPoint import helper;
+- reproducible local configuration;
+- CI and public-repository secret guard;
+- architecture and security documentation.
 
-### Private production components
+### Not published
 
-- signing keys and credentials;
-- production signer infrastructure;
-- abuse-detection/rate-control implementation;
-- internal operational thresholds;
-- merchant/customer operational systems;
-- deployment runbooks and private infrastructure configuration.
-
-The private components are **not required to compile, test or evaluate the public implementation**.
+- production signer/deployer private keys;
+- production `.env` files or private RPC credentials;
+- backend eligibility, abuse-detection and rate-control implementation;
+- merchant/customer data;
+- operational recovery material and private deployment runbooks;
+- unrelated production services.
 
 See [`PUBLIC_PRIVATE_BOUNDARY.md`](PUBLIC_PRIVATE_BOUNDARY.md) and [`SECURITY.md`](SECURITY.md).
 
----
+## Dependency compatibility
 
-## Relationship to Zynost production
+The production-safe source is kept on the dependency major lines it was built and tested with, including OpenZeppelin 4.x and ERC-4337 account-abstraction 0.6.x. Dependabot is configured not to automatically propose incompatible major-line migrations for those two dependencies.
 
-The public contract is a sanitized reference edition derived from architectural patterns used in the production Zynost Pay gasless checkout system. It is intentionally named `ZynostReferencePaymaster` so reviewers can distinguish public reusable code from live production deployment code and configuration.
+## CI
 
-No production private key, signing secret, customer data or production credential belongs in this repository.
-
----
-
-## Broader Zynost ecosystem
-
-- **Zynost Intelligence** — multi-source crypto decision intelligence;
-- **Zynost Pay** — non-custodial merchant payments;
-- **Zynost Paymaster** — ERC-4337 gas sponsorship on BNB Smart Chain;
-- **UQX** — BNB-native ecosystem/community and wallet layer.
-
-The broader direction is to connect intelligence, self-custody and transaction execution while keeping user authorization and custody boundaries explicit.
-
----
-
-## Technology
-
-- Solidity 0.8.23
-- Hardhat
-- OpenZeppelin
-- ERC-4337 / eth-infinitism account-abstraction v0.6
-- BNB Smart Chain
-
----
+GitHub Actions runs the public repository guard, dependency installation, Solidity compilation and the production Paymaster test suite on pushes and pull requests.
 
 ## License
 
-The reference Solidity implementation is released under **GPL-3.0**, matching its SPDX identifier and avoiding conflicting package-level licensing metadata.
+`ZynostVerifyingPaymaster.sol` is GPL-3.0 as declared by its SPDX identifier. See [`LICENSE`](LICENSE).
 
----
+## Security / audit position
+
+This repository provides reproducible source and tests, but it does **not** claim that internal tests are equivalent to an independent third-party smart-contract audit. Do not publish private keys, seed phrases, credentials or user data in issues or pull requests.
 
 ## Status
 
-**Public reference implementation available. Production infrastructure remains separately operated and privately configured.**
-
-Security hardening and independent review remain ongoing priorities; this repository does not claim an external audit.
+**Production-safe Paymaster source is open source and independently runnable; production operational infrastructure remains separately operated and private.**
