@@ -1,23 +1,38 @@
-# Zynost Paymaster — Gasless Checkout on BNB Smart Chain
+# Zynost Paymaster — Open ERC-4337 Gas Sponsorship on BNB Smart Chain
 
-> **ERC-4337 gas sponsorship for non-custodial crypto payments — without giving the paymaster control of customer or merchant funds.**
+> **A runnable public reference implementation of Zynost's non-custodial gas-sponsorship architecture for ERC-4337 checkout flows.**
 
-Zynost Paymaster is the gas-sponsorship layer behind **Zynost Pay**, a non-custodial crypto payment gateway. It solves one of the most common checkout failures in crypto: a customer has the token required for payment, but does not have enough native gas token to complete the transaction.
+Zynost Paymaster is the gas-sponsorship layer behind **Zynost Pay**, a non-custodial crypto payment gateway. The production system solves a common crypto checkout failure: a customer has the payment token but not enough native gas to finish the transaction.
 
-Instead of asking the merchant to custody funds or asking the customer to manually acquire gas first, Zynost Pay can sponsor an eligible ERC-4337 UserOperation through a policy-controlled paymaster.
+This repository now contains **real runnable source code**, tests and local/BSC-testnet configuration for the reusable on-chain sponsorship mechanism. It is no longer documentation-only.
 
 **Network focus:** BNB Smart Chain (BSC)  
 **Account abstraction:** ERC-4337 v0.6  
-**Production use:** Gasless checkout through Zynost Pay  
+**Public contract:** [`contracts/ZynostReferencePaymaster.sol`](contracts/ZynostReferencePaymaster.sol)  
+**Tests:** [`test/ZynostReferencePaymaster.test.js`](test/ZynostReferencePaymaster.test.js)  
 **Related product:** [Zynost Pay](https://github.com/umarae-dev/zynost-pay-overview)
 
 ---
 
-## Why this matters for BNB Chain
+## What is open source here
 
-BNB Chain is attractive for payment flows because transactions are fast and inexpensive, but users can still fail at the final step if they hold stablecoins without native gas.
+The public implementation demonstrates the core reusable sponsorship model:
 
-Zynost Paymaster turns that UX failure into an infrastructure problem the application can solve safely:
+- ERC-4337 `BasePaymaster` integration;
+- off-chain signed sponsorship authorization;
+- authorization bound to chain, paymaster, sender state, validity window and maximum sponsored cost;
+- replay resistance through sender-scoped nonce state;
+- independent on-chain per-sender daily spending caps;
+- independent on-chain global daily spending caps;
+- emergency sponsorship pause;
+- owner-controlled signer/cap administration;
+- adversarial tests for the core authorization and budget invariants.
+
+The public code is designed to be independently compiled and tested without access to Zynost production infrastructure.
+
+---
+
+## Architecture
 
 ```text
 Customer Wallet
@@ -28,180 +43,178 @@ ERC-4337 Smart Account
       │
       │ UserOperation
       ▼
-Zynost Sponsorship Policy
+Off-chain Sponsorship Policy
       │
-      │ scoped + time-bounded approval
+      │ scoped + time-bounded authorization
       ▼
-Zynost Paymaster
+Zynost Reference Paymaster
       │
-      │ sponsors eligible gas
+      ├─ signature verification
+      ├─ sender replay state
+      ├─ cost-bound approval
+      ├─ per-sender cap
+      ├─ global cap
+      └─ emergency pause
+      │
       ▼
 BNB Smart Chain
-      │
-      ▼
-Merchant receives payment directly
 ```
 
-The paymaster sponsors **gas only**. It does not become a custodian of the payment.
+The paymaster sponsors **gas only**. It does not custody customer or merchant payment funds.
 
 ---
 
-## Core security model
+## Why this matters for BNB Chain
 
-Gas sponsorship is deliberately split across independent layers rather than trusting one backend check.
+BNB Chain is attractive for payment flows because transactions are fast and inexpensive, but checkout can still fail when a user holds a stablecoin without native BNB for gas.
 
-### 1. Off-chain policy gate
+ERC-4337 lets an application sponsor eligible operations without taking custody of the user's payment. The sponsor can apply policy before signing, while the paymaster independently enforces hard on-chain limits.
 
-Before an operation is approved, the application applies eligibility, abuse-prevention, rate-limit and failure controls. Requests that should never reach the chain are rejected early.
-
-### 2. Signed, scoped authorization
-
-Approved operations receive a cryptographic authorization bound to the specific UserOperation context, validity window and maximum sponsored cost. A generic "free gas" signature is never issued.
-
-### 3. Independent on-chain enforcement
-
-The paymaster verifies authorization again on-chain and applies contract-level limits. This means bypassing an application-side rate limiter is not enough to obtain unlimited sponsorship.
-
-### 4. Replay resistance
-
-Approvals are tied to operation-specific state so they cannot simply be reused for another sender or indefinitely replayed.
-
-### 5. Emergency controls
-
-Sponsorship can be paused independently from user funds. The emergency control affects the paymaster's own gas budget; it does not freeze customer or merchant assets.
+That separation is important: bypassing an application-side rate limiter is not enough to obtain unlimited sponsorship.
 
 ---
 
-## Non-custodial invariant
+## Security model
 
-The most important design property is simple:
+### 1. Signed, scoped authorization
 
-> **The paymaster can spend its own gas deposit. It cannot spend the merchant's payment funds.**
+The authorization hash binds the UserOperation context to:
 
-Zynost Pay's payment architecture is intentionally separate from the sponsorship balance. Customer payments are routed to merchant-controlled addresses while the paymaster's operational balance exists only to cover eligible network fees.
+- the current chain;
+- the paymaster address;
+- sender-scoped replay state;
+- a validity window;
+- an explicit maximum sponsored cost.
 
-This reduces the blast radius of a paymaster failure: even a sponsorship outage should not turn into custody of merchant balances.
+A generic reusable "free gas" signature is never sufficient.
 
----
+### 2. On-chain budget enforcement
 
-## Smart accounts
+Even a correctly signed request must remain within contract-level per-sender and global daily caps.
 
-Gasless checkout uses ERC-4337 smart accounts rather than a custodial wallet controlled by Zynost.
+### 3. Replay resistance
 
-The architecture is based on the standard Account Abstraction ecosystem and uses established reference components rather than inventing a custom wallet standard for the cryptographic primitives.
+Sender nonce state is included in the signed hash so an authorization envelope cannot simply be replayed indefinitely.
 
-Benefits include:
+### 4. Emergency control
 
-- deterministic smart-account addressing;
-- compatibility with ERC-4337 bundler infrastructure;
-- application-sponsored gas without transferring custody;
-- policy controls around what the sponsor is willing to pay for;
-- a path toward richer account permissions and AI-assisted wallet safety features.
+Sponsorship can be paused independently from user funds. Pausing affects the paymaster's gas budget, not customer or merchant assets.
 
----
+### 5. Non-custodial invariant
 
-## Threat model
-
-The system is designed around the assumption that public payment infrastructure will be probed and abused.
-
-| Threat | Primary defense |
-|---|---|
-| Unlimited gas-drain requests | Signed authorization + on-chain spending limits |
-| Replayed sponsorship approval | Operation-bound authorization + replay state |
-| Invalid or untrusted signer | On-chain signature verification |
-| Cost escalation after approval | Maximum sponsored-cost binding |
-| Automated request flooding | Off-chain rate controls + on-chain hard limits |
-| Emergency operational issue | Independent sponsorship pause |
-| Paymaster compromise affecting merchant funds | Separation of gas balance from payment custody |
-
-No security design is presented as "unhackable". The objective is defense in depth, strict blast-radius control and auditable invariants.
+> **The paymaster can spend its own EntryPoint deposit. It cannot spend a customer's payment funds.**
 
 ---
 
-## Testing philosophy
+## Run locally
 
-The private production implementation is tested against adversarial cases including:
+Requirements:
 
-- valid sponsorship within budget;
+- Node.js 20+
+- npm
+
+```bash
+npm install
+npm run compile
+npm test
+```
+
+The default Hardhat network requires no API key, wallet or production credential.
+
+### Optional BSC Testnet configuration
+
+Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Then supply a **testnet-only** RPC URL and testnet deployer key if you want to deploy your own reference instance. Never reuse a production signing/deployer key.
+
+---
+
+## Tests
+
+The public suite covers:
+
+- valid signed sponsorship;
 - wrong-signer rejection;
-- approved-cost overflow rejection;
+- maximum approved-cost enforcement;
 - per-sender spending limits;
 - global sponsorship limits;
-- accumulated spending across multiple operations;
 - paused sponsorship;
-- owner-only administrative controls;
-- expired authorization handling;
-- cross-sender replay attempts.
+- sender-bound authorization / cross-sender replay rejection.
 
-The public repository intentionally documents the security properties without publishing production secrets or operational credentials.
+These tests are adapted from the production development test strategy, while production credentials and operational policy remain outside this repository.
 
 ---
 
-## Production vs. public repository boundary
+## Public / private boundary
 
-This repository is a **public technical overview**, not a dump of the live production environment.
+Zynost is an operating commercial ecosystem. This repository intentionally separates reusable open-source technology from production operations.
 
-### Public here
+### Public
 
-- architecture and trust model;
-- BNB Smart Chain integration model;
-- security invariants;
-- threat model;
-- testing philosophy;
-- public product relationships and documentation.
+- reference Solidity paymaster;
+- ERC-4337 sponsorship mechanics;
+- deterministic authorization format;
+- on-chain safety controls;
+- tests;
+- local/BSC-testnet configuration;
+- architecture and threat model.
 
-### Kept private
+### Private production components
 
-- production deployment credentials;
-- signing keys and secrets;
-- backend abuse-detection implementation;
-- operational runbooks;
-- private infrastructure configuration;
-- unaudited production contract/deployment source where publishing it would increase operational risk.
+- signing keys and credentials;
+- production signer infrastructure;
+- abuse-detection/rate-control implementation;
+- internal operational thresholds;
+- merchant/customer operational systems;
+- deployment runbooks and private infrastructure configuration.
 
-**No private key, seed phrase, signing secret or production credential should ever be committed to this repository.**
+The private components are **not required to compile, test or evaluate the public implementation**.
+
+See [`PUBLIC_PRIVATE_BOUNDARY.md`](PUBLIC_PRIVATE_BOUNDARY.md) and [`SECURITY.md`](SECURITY.md).
 
 ---
 
-## Open-source / hackathon track
+## Relationship to Zynost production
 
-Zynost is preparing a **separate, safely scoped open-source BNB component** for developer and hackathon use. The goal is to make the submitted component fully inspectable and reproducible without turning the entire commercial production stack into public attack surface.
+The public contract is a sanitized reference edition derived from architectural patterns used in the production Zynost Pay gasless checkout system. It is intentionally named `ZynostReferencePaymaster` so reviewers can distinguish public reusable code from live production deployment code and configuration.
 
-The open-source track will use non-production configuration and reproducible local/testnet deployment so developers can inspect the mechanism without requiring access to Zynost's production secrets.
-
-This repository will link to that component once it is ready.
+No production private key, signing secret, customer data or production credential belongs in this repository.
 
 ---
 
 ## Broader Zynost ecosystem
 
-Zynost Paymaster is one infrastructure layer inside a larger crypto product ecosystem:
-
-- **Zynost Intelligence** — multi-agent crypto decision intelligence;
-- **Zynost Wallet** — self-custody wallet infrastructure;
+- **Zynost Intelligence** — multi-source crypto decision intelligence;
 - **Zynost Pay** — non-custodial merchant payments;
 - **Zynost Paymaster** — ERC-4337 gas sponsorship on BNB Smart Chain;
-- **UQX** — BNB-native ecosystem and community layer.
+- **UQX** — BNB-native ecosystem/community and wallet layer.
 
-The long-term direction is to connect intelligence, wallet safety and transaction execution while preserving self-custody.
+The broader direction is to connect intelligence, self-custody and transaction execution while keeping user authorization and custody boundaries explicit.
 
 ---
 
 ## Technology
 
-- Solidity
+- Solidity 0.8.23
 - Hardhat
 - OpenZeppelin
-- ERC-4337 Account Abstraction
-- eth-infinitism reference contracts
+- ERC-4337 / eth-infinitism account-abstraction v0.6
 - BNB Smart Chain
+
+---
+
+## License
+
+The reference Solidity implementation is released under **GPL-3.0**, matching its SPDX identifier and avoiding conflicting package-level licensing metadata.
 
 ---
 
 ## Status
 
-**Active development / production infrastructure.**
+**Public reference implementation available. Production infrastructure remains separately operated and privately configured.**
 
-The production paymaster is used by Zynost Pay's gasless checkout flow on BNB Smart Chain. Security hardening and independent review remain ongoing priorities before broader public release of production-sensitive source.
-
-For security-related reports, see [`SECURITY.md`](SECURITY.md).
+Security hardening and independent review remain ongoing priorities; this repository does not claim an external audit.
