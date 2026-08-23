@@ -108,13 +108,14 @@ describe("ZynostVerifyingPaymaster", function () {
     const maxSponsoredCost = ethers.parseEther("0.001");
 
     const partialOp = buildUserOp({ sender: sender.address });
+    // Signed by an attacker/unrelated key, not the real verifyingSigner.
     const signature = await signApproval(paymaster, otherSigner, partialOp, validUntil, validAfter, maxSponsoredCost);
     const paymasterAndData = buildPaymasterAndData(paymasterAddress, validUntil, validAfter, maxSponsoredCost, signature);
     const userOp = buildUserOp({ sender: sender.address, paymasterAndData });
 
     const [, validationData] = await validate(userOp, maxSponsoredCost);
     const sigFailed = BigInt(validationData) & 1n;
-    expect(sigFailed).to.equal(1n);
+    expect(sigFailed).to.equal(1n); // SIG_VALIDATION_FAILED, not a revert
   });
 
   it("reverts when the actual cost exceeds the explicitly-approved max", async function () {
@@ -128,6 +129,7 @@ describe("ZynostVerifyingPaymaster", function () {
     const paymasterAndData = buildPaymasterAndData(paymasterAddress, validUntil, validAfter, maxSponsoredCost, signature);
     const userOp = buildUserOp({ sender: sender.address, paymasterAndData });
 
+    // Bundler claims a higher actual cost than what was signed off on.
     await expect(validate(userOp, maxSponsoredCost + 1n)).to.be.revertedWith("ZynostPaymaster: cost exceeds approved max");
   });
 
@@ -135,6 +137,7 @@ describe("ZynostVerifyingPaymaster", function () {
     const paymasterAddress = await paymaster.getAddress();
     const validUntil = Math.floor(Date.now() / 1000) + 3600;
     const validAfter = 0;
+    // Ask for more than the sender's entire daily cap in one shot.
     const maxSponsoredCost = DAILY_CAP_PER_SENDER + 1n;
 
     const partialOp = buildUserOp({ sender: sender.address });
@@ -149,15 +152,20 @@ describe("ZynostVerifyingPaymaster", function () {
     const paymasterAddress = await paymaster.getAddress();
     const validUntil = Math.floor(Date.now() / 1000) + 3600;
     const validAfter = 0;
-    const firstCost = (DAILY_CAP_PER_SENDER * 6n) / 10n;
-    const secondCost = (DAILY_CAP_PER_SENDER * 5n) / 10n;
+    const firstCost = (DAILY_CAP_PER_SENDER * 6n) / 10n; // 60% of cap
+    const secondCost = (DAILY_CAP_PER_SENDER * 5n) / 10n; // another 50% -> 110% total, must fail
 
+    // First op: nonce 0, should succeed and consume real state (a static
+    // call alone wouldn't persist it - use the real tx here).
     let partialOp = buildUserOp({ sender: sender.address });
     let signature = await signApproval(paymaster, verifyingSigner, partialOp, validUntil, validAfter, firstCost);
     let paymasterAndData = buildPaymasterAndData(paymasterAddress, validUntil, validAfter, firstCost, signature);
     let userOp = buildUserOp({ sender: sender.address, paymasterAndData });
     await validateTx(userOp, firstCost);
 
+    // Second op: paymaster's internal senderNonce has now advanced to 1,
+    // so it must be re-signed against the NEW nonce (getHash reads current
+    // senderNonce), matching how a real backend would always sign fresh.
     partialOp = buildUserOp({ sender: sender.address });
     signature = await signApproval(paymaster, verifyingSigner, partialOp, validUntil, validAfter, secondCost);
     paymasterAndData = buildPaymasterAndData(paymasterAddress, validUntil, validAfter, secondCost, signature);
@@ -176,7 +184,7 @@ describe("ZynostVerifyingPaymaster", function () {
 
     const validUntil = Math.floor(Date.now() / 1000) + 3600;
     const validAfter = 0;
-    const cost = ethers.parseEther("0.001") + 1n;
+    const cost = ethers.parseEther("0.001") + 1n; // 1 wei over the tiny global cap
 
     const partialOp = buildUserOp({ sender: sender.address });
     const signature = await signApproval(tightGlobalPaymaster, verifyingSigner, partialOp, validUntil, validAfter, cost);
@@ -216,7 +224,7 @@ describe("ZynostVerifyingPaymaster", function () {
 
   it("rejects a stale (expired) approval", async function () {
     const paymasterAddress = await paymaster.getAddress();
-    const validUntil = Math.floor(Date.now() / 1000) - 10;
+    const validUntil = Math.floor(Date.now() / 1000) - 10; // already expired
     const validAfter = 0;
     const maxSponsoredCost = ethers.parseEther("0.001");
 
@@ -225,6 +233,11 @@ describe("ZynostVerifyingPaymaster", function () {
     const paymasterAndData = buildPaymasterAndData(paymasterAddress, validUntil, validAfter, maxSponsoredCost, signature);
     const userOp = buildUserOp({ sender: sender.address, paymasterAndData });
 
+    // The paymaster itself doesn't reject on expiry directly - it packs
+    // validUntil/validAfter into validationData for the EntryPoint to
+    // enforce (standard ERC-4337 division of responsibility). Confirm the
+    // packed value actually carries the expired timestamp so the
+    // EntryPoint WILL reject it.
     const [, validationData] = await validate(userOp, maxSponsoredCost);
     const packedValidUntil = (BigInt(validationData) >> 160n) & ((1n << 48n) - 1n);
     expect(packedValidUntil).to.equal(BigInt(validUntil));
@@ -236,6 +249,8 @@ describe("ZynostVerifyingPaymaster", function () {
     const validAfter = 0;
     const maxSponsoredCost = ethers.parseEther("0.001");
 
+    // Sign for `sender`, then try to use that exact signature for a
+    // different sender address.
     const partialOp = buildUserOp({ sender: sender.address });
     const signature = await signApproval(paymaster, verifyingSigner, partialOp, validUntil, validAfter, maxSponsoredCost);
     const paymasterAndData = buildPaymasterAndData(paymasterAddress, validUntil, validAfter, maxSponsoredCost, signature);
