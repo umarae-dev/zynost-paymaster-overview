@@ -1,40 +1,32 @@
 # Public / Private Boundary
 
-This repository contains a public, reusable reference implementation of Zynost's ERC-4337 gas-sponsorship architecture.
+This repository publishes the production-safe on-chain Zynost ERC-4337 Paymaster component and its matching production test suite while excluding operational secrets and private commercial infrastructure.
 
 ## Public in this repository
 
-- ERC-4337 reference paymaster contract
-- signed and time-bounded sponsorship authorization
-- sender-bound replay protection
-- explicit maximum sponsored-cost binding
-- per-sender and global on-chain spending caps
-- emergency sponsorship pause
-- local Hardhat configuration
-- BSC testnet configuration
-- adversarial tests
-- non-production environment template
-- architecture and security documentation
+- exact production-safe `contracts/ZynostVerifyingPaymaster.sol` source;
+- exact production `test/ZynostVerifyingPaymaster.test.js` suite;
+- the production Hardhat helper that compiles a genuine ERC-4337 EntryPoint for tests;
+- signed, time-bounded and cost-capped sponsorship authorization mechanics;
+- sender-bound replay protection;
+- per-sender and global on-chain spending caps;
+- emergency sponsorship pause;
+- local/BSC-testnet configuration containing no real credential;
+- public CI, secret guard, architecture and security documentation.
 
-## Private in the production system
+## Private / not copied from production
 
-The commercial production stack additionally contains components that are intentionally not published here, including:
+- production signer and deployer private keys;
+- production `.env` files and private RPC credentials;
+- backend eligibility, abuse-detection and rate-control implementation;
+- private operational thresholds/configuration beyond what is inherently visible on-chain;
+- deployment/recovery runbooks and monitoring infrastructure;
+- merchant/customer data and unrelated production services.
 
-- production signing keys and credentials
-- production signer infrastructure
-- abuse-detection and eligibility implementation
-- production rate-limit thresholds and operational policies
-- private infrastructure configuration
-- deployment runbooks
-- internal monitoring and incident-response systems
-- merchant/customer production data
-
-These private components are not required to compile, test, inspect, or evaluate the public reference paymaster.
+These private components are not required to compile or run the public Paymaster test suite.
 
 ## Security principle
 
-Security does not depend on hiding the public contract. Secrets and operational controls remain private, while the reusable on-chain mechanism is made inspectable and testable.
+Security does not depend on hiding the Paymaster contract. The inspectable on-chain controls are public; credentials, signer material, user data and private operations remain outside source control.
 
-## Hackathon / developer use
-
-The public implementation is intended to be independently reproducible with local Hardhat or non-production BSC testnet configuration. It should not be assumed to represent every parameter, threshold, policy, or operational control used by Zynost in production.
+The public repository history represents the public extraction/maintenance timeline and is not backdated to imitate earlier private production development.
