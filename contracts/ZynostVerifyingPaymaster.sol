@@ -158,12 +158,25 @@ contract ZynostVerifyingPaymaster is BasePaymaster {
 
         bytes32 hash = getHash(userOp, validUntil, validAfter, maxSponsoredCost).toEthSignedMessageHash();
 
+        // Burn this nonce regardless of signature outcome - matches the
+        // audited reference's own behavior: since the nonce is baked into
+        // the signed hash, incrementing it unconditionally means a failed
+        // attempt can never be resubmitted with the exact same signed
+        // envelope, closing off a stuck-retry-loop replay angle.
         senderNonce[userOp.sender]++;
 
         if (verifyingSigner != hash.recover(signature)) {
+            // Don't revert on signature failure - report it via
+            // validationData (SIG_VALIDATION_FAILED) per the ERC-4337
+            // spec, so the bundler can cleanly reject the op during
+            // simulation. No cap state has been touched yet.
             return ("", _packValidationData(true, validUntil, validAfter));
         }
 
+        // Only a VALIDLY-SIGNED, explicitly-approved request can ever reach
+        // here - and even then, it is still bounded by hard on-chain caps
+        // that do not depend on the backend's own bookkeeping being
+        // correct or its signing key remaining uncompromised.
         _rolloverSenderWindowIfNeeded(userOp.sender);
         _rolloverGlobalWindowIfNeeded();
         require(spentToday[userOp.sender] + maxCost <= dailyCapPerSender, "ZynostPaymaster: sender daily cap exceeded");
