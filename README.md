@@ -2,7 +2,7 @@
 
 > **Open-source production-safe on-chain Paymaster subsystem extracted from the live Zynost Pay stack without production secrets.**
 
-Zynost Paymaster is the ERC-4337 gas-sponsorship layer used for gasless checkout flows. The Paymaster can spend only its own EntryPoint gas deposit; it does not custody or transfer customer or merchant payment funds.
+Zynost Paymaster is the ERC-4337 gas-sponsorship layer used for supported gasless checkout flows. The Paymaster can spend only its own EntryPoint gas deposit; it does not custody or transfer customer or merchant payment funds.
 
 **Network focus:** BNB Smart Chain  
 **Account abstraction:** ERC-4337 v0.6  
@@ -11,17 +11,17 @@ Zynost Paymaster is the ERC-4337 gas-sponsorship layer used for gasless checkout
 
 ## Public production-safe subsystem
 
-This repository now includes the complete safe-to-publish Paymaster-side subset from production:
+This repository includes the safe-to-publish Paymaster-side subset from production:
 
-- exact production-safe `ZynostVerifyingPaymaster.sol`;
-- exact production Paymaster test suite;
-- genuine EntryPoint Hardhat compile helper;
+- production-safe `ZynostVerifyingPaymaster.sol`;
+- production Paymaster test suite;
+- EntryPoint Hardhat compile helper using the account-abstraction dependency;
 - production `SimpleAccountFactory` import shim;
 - production `SimpleAccountFactory` tests;
 - production Paymaster deploy script;
 - production account-factory deploy script;
-- production local real-EntryPoint deployment script;
-- production EntryPoint-deposit and withdrawal maintenance scripts;
+- local EntryPoint integration-deployment script;
+- EntryPoint-deposit and withdrawal maintenance scripts;
 - secret-free Hardhat network configuration;
 - `.env.example` containing placeholders only;
 - public-repository secret guard;
@@ -96,12 +96,12 @@ npm run check:public
 ### SimpleAccountFactory
 
 - deterministic counterfactual addresses;
-- real code deployment at the predicted address;
+- deployed bytecode at the predicted address;
 - idempotent account creation;
 - owner correctness;
 - owner and salt address separation.
 
-The tests deploy the genuine ERC-4337 EntryPoint implementation from the account-abstraction dependency rather than using a hand-rolled EntryPoint mock.
+The tests deploy the canonical ERC-4337 EntryPoint implementation from the account-abstraction dependency rather than a custom EntryPoint mock.
 
 ## Deployment and maintenance scripts
 
@@ -109,21 +109,30 @@ Production-safe scripts are under `scripts/`:
 
 - `deploy.js` — deploy and initially fund `ZynostVerifyingPaymaster`;
 - `deploy_account_factory.js` — deploy canonical `SimpleAccountFactory` for EntryPoint v0.6;
-- `deploy_local_for_testing.js` — deploy a genuine local EntryPoint + Paymaster for integration checks;
+- `deploy_local_for_testing.js` — deploy a local EntryPoint + Paymaster for integration checks;
 - `deposit_only.js` — add BNB to the deployed Paymaster's EntryPoint deposit;
 - `withdraw.js` — owner-only withdrawal from the Paymaster's own EntryPoint deposit.
 
-Real private keys are never included. See `.env.example` for the variable names only.
+Private keys are never included. See `.env.example` for variable names/placeholders only.
 
 ## Public / private boundary
 
-Public source includes the complete safe Paymaster-side contract/test/deployment subset. Production signer/deployer keys, real `.env` files, private RPC credentials, backend eligibility and abuse-control implementation, merchant/customer data, monitoring/recovery infrastructure and unrelated production services remain private.
+Public source includes the complete safe Paymaster-side contract/test/deployment subset. Production signer/deployer keys, secret-bearing `.env` files, private RPC credentials, backend eligibility/abuse-control implementation, merchant/customer data, monitoring/recovery infrastructure and unrelated production services remain private.
 
 See [`PUBLIC_PRIVATE_BOUNDARY.md`](PUBLIC_PRIVATE_BOUNDARY.md) and [`SECURITY.md`](SECURITY.md).
 
 ## Dependency compatibility
 
 The public source stays on the dependency major lines used by this production subsystem: OpenZeppelin 4.x and ERC-4337 account-abstraction 0.6.x. Dependabot is configured not to automatically propose incompatible major-line migrations for those dependencies.
+
+## Related repositories
+
+- [Zynost Pay client core](https://github.com/umarae-dev/zynost-pay-overview)
+- [Zynost Gateway API](https://github.com/umarae-dev/zynost-gateway-backend-overview)
+- [UQX Android wallet overview](https://github.com/umarae-dev/uqx-app-overview)
+- [UQX BNB contracts](https://github.com/umarae-dev/uqx-bnb-contracts-overview)
+
+UQX is documented in the ecosystem as a self-custody Web3 wallet. Historical mining/reward identifiers belong to UQX's legacy compatibility/deployment history and are not Paymaster product concepts.
 
 ## CI
 
